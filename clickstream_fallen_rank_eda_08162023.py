@@ -26,7 +26,7 @@ end_date_analysis = '2023-06-16'
 # COMMAND ----------
 
 #get the clickstream product and fact tables for the time period of interest
-clicks_prod_interest = csdm.get_clickstream_records(start_date=start_date_analysis, end_date=end_date_analysis, join_with=['product'])
+clicks_prod_interest = csdm.get_clickstream_records(start_date=start_date_analysis, end_date=end_date_analysis, join_with=['product','session'])
 
 # COMMAND ----------
 
@@ -34,8 +34,49 @@ clicks_prod_interest.display()
 
 # COMMAND ----------
 
+# MAGIC %md
+# MAGIC ## A quick dive into view-product effo scenarios. We can refine view-product scenarios by using the component field. component_name = 'internal search' will limit us to product clicks within the internal search page context.
+
+# COMMAND ----------
+
+#limit scenarios to internal-search and view-product
+search_clicks = clicks_prod_interest.where(f.col('effo_scenario_name')=='internal-search')
+view_prod_clicks = clicks_prod_interest.where(f.col('effo_scenario_name')=='view-product')
+
+# COMMAND ----------
+
+#view-product scenarios can be further refined by the area of the site where the view product action originated. Here
+#we want to look at product views from internal search results
+view_prod_clicks_internal_search = view_prod_clicks.where(f.col('component_name')=='internal search')
+
+# COMMAND ----------
+
+#how many view product clicks does that leave us with
+view_prod_clicks_internal_search.count()
+
+# COMMAND ----------
+
+#do a join with the internal search scenario df to check for data loss. I would not expect there to be much, if any
+joined_scenarios = search_clicks.join(view_prod_clicks_internal_search, on=['effo_session', 'upc'])
+
+# COMMAND ----------
+
+joined_scenarios.count()
+
+# COMMAND ----------
+
+#In the previous step, the rowcount after the join exceeded what I expected. This is likely due to multiple visits to a UPC's product page within a single internal search
+joined_scenarios.display()
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Main Quest: Analyze deboosting of PLAs over the defined time period, and leverage view-product scenarios to ascribe CTR on deboosted products
+
+# COMMAND ----------
+
 #pull columns needed for the analysis and limit to 'internal-search' scenarios
-search_clicks = clicks_prod_interest.where(f.col('effo_scenario_name')=='internal-search').select('click_date', 'effo_click_id', 'espot_id', 'guid', 'impression_id', 'product_item_index', 'monetized_product', 'relevance_score', 'upc', 'product_impression_id')
+search_clicks = clicks_prod_interest.where(f.col('effo_scenario_name')=='internal-search').select('effo_session', 'click_date', 'effo_click_id', 'guid', 'impression_id', 'product_item_index', 'monetized_product', 'relevance_score', 'upc', 'product_impression_id')
 
 # COMMAND ----------
 
@@ -140,12 +181,18 @@ search_clicks_monetized.select('effo_click_id').distinct().count()
 
 # COMMAND ----------
 
+# MAGIC %md
+# MAGIC ## Now lets pull some stats for analysis
+
+# COMMAND ----------
+
 #here is the first result we are interested in: frequency of the different rank_diff to show the scope of the problem
 
 search_clicks_monetized.groupBy('rank_diff').count().display()
 
 # COMMAND ----------
 
+#how many products were deboosted (rank_diff < 0)
 neg_rank_diff = search_clicks_monetized.where(f.col("rank_diff")<0)
 neg_rank_diff_count = neg_rank_diff.count()
 
@@ -155,8 +202,56 @@ neg_rank_diff_count
 
 # COMMAND ----------
 
+#what fraction of all search results are deboosted PLAs?
 frac_neg_rank_diff_total = neg_rank_diff_count/search_clicks_relevance_rank.count()
 
 # COMMAND ----------
 
 frac_neg_rank_diff_total
+
+# COMMAND ----------
+
+#join with the view_product internal-search component table to see what fraction of deboosted PLAs were actually clicked on (this means an advertiser was billed for the deboosted spot at CPC)
+neg_rank_clicks = neg_rank_diff.join(view_prod_clicks_internal_search, on=['effo_session', 'upc'])
+
+# COMMAND ----------
+
+neg_rank_clicks.count()
+
+# COMMAND ----------
+
+frac_neg_rank_click = neg_rank_clicks.count()/neg_rank_diff_count
+
+# COMMAND ----------
+
+# TAKEAWAY: only 1% of deboosted PLAs are actually clicked
+frac_neg_rank_click
+
+# COMMAND ----------
+
+#finally, get clicks on deboosted PLAs as a percentage of all PLAs?
+frac_neg_rank_click_total_pla = neg_rank_clicks.count()/search_clicks_monetized.count()
+
+# COMMAND ----------
+
+frac_neg_rank_click_total_pla
+
+# COMMAND ----------
+
+#Out of curiosity, what is the click % of boosted PLAs?
+pos_rank_diff = search_clicks_monetized.where(f.col("rank_diff")>=0)
+pos_rank_clicks = pos_rank_diff.join(view_prod_clicks_internal_search, on=['effo_session', 'upc'])
+
+# COMMAND ----------
+
+frac_pos_rank_clicks = pos_rank_clicks.count()/pos_rank_diff.count()
+
+# COMMAND ----------
+
+#TAKEAWAY fraction of boosted PLAs that are clicked is more than 2x that of deboosted
+frac_pos_rank_clicks
+
+# COMMAND ----------
+
+frac_pos_rank_click_total_pla = pos_rank_clicks.count()/search_clicks_monetized.count()
+frac_pos_rank_click_total_pla
