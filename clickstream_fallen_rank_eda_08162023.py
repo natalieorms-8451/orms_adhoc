@@ -143,3 +143,20 @@ search_clicks_monetized.select('effo_click_id').distinct().count()
 #here is the first result we are interested in: frequency of the different rank_diff to show the scope of the problem
 
 search_clicks_monetized.groupBy('rank_diff').count().display()
+
+# COMMAND ----------
+
+neg_rank_diff = search_clicks_monetized.where(f.col("rank_diff")<0)
+neg_rank_diff_count = neg_rank_diff.count()
+
+# COMMAND ----------
+
+neg_rank_diff_count
+
+# COMMAND ----------
+
+frac_neg_rank_diff_total = neg_rank_diff_count/search_clicks_relevance_rank.count()
+
+# COMMAND ----------
+
+frac_neg_rank_diff_total
