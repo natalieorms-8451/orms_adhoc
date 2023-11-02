@@ -209,3 +209,20 @@ attr_transactions.display()
 
 path = "abfss://media@sa8451dbxadhocprd.dfs.core.windows.net/n510252/attribution_backfill/out/10132023_10262023_txn_final_filtered"
 attr_transactions.write.parquet(path)
+
+# COMMAND ----------
+
+#read in the output
+attr_transactions = spark.read.parquet('abfss://media@sa8451dbxadhocprd.dfs.core.windows.net/n510252/attribution_backfill/out/10132023_10262023_txn_final_filtered')
+
+# COMMAND ----------
+
+attr_transactions.count()
+
+# COMMAND ----------
+
+#write to a pipeline delimited csv
+#attr_transactions.write.option("sep","|").option("header","true").csv('abfss://media@sa8451dbxadhocprd.dfs.core.windows.net/n510252/attribution_backfill/out/10132023_10262023_txn_final_filtered_delim.csv')
+attr_transactions.write.format('csv') \
+    .options(delimiter='|') \
+    .save('abfss://media@sa8451dbxadhocprd.dfs.core.windows.net/n510252/attribution_backfill/out/10132023_10262023_txn_final_filtered_delim.csv')
